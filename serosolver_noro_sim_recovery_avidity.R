@@ -27,7 +27,7 @@ serosolver_wd <- "~/GitHub/serosolver/" # this is up to date
 library(serosolver)  # note this must be the specific branch
 
 packageVersion("serosolver")
-available.versions("serosolver")
+
 packageDescription("serosolver") # check it is the right branch
 
 run_name <- "sim_noro_t1"
@@ -84,7 +84,7 @@ sampled_viruses <- c(2000,2002,2006,2009,2012)
 sampling_times <- seq(samp_min, samp_max, by=1)
 
 ## Create a fake antigenic map -- can put in what you like here
-antigenic_coords <- data.frame(Strain=c(2002,2006,2009,2012),X=c(0.5,3,3.5,4),Y=c(2,1,3,4))
+antigenic_coords <- data.frame(Strain=c(2000,2002,2006,2009,2012),X=c(0,0.5,3,3.5,4),Y=c(0,2,1,3,4))
 antigenic_map <- generate_antigenic_map_flexible(antigenic_coords,
                                                  year_max=2013,year_min=2000,spar = 0.001)
 ggplot(antigenic_map) + geom_line(aes(x=x_coord,y=y_coord)) +
@@ -147,7 +147,7 @@ sim_data <- simulate_data(par_tab=par_tab, group=1, n_indiv=n_indivs,
                      measured_strains=sampled_viruses,
                      sampling_times=sampling_times, nsamps=n_samps, 
                      antigenic_map=antigenic_map, 
-                     titre_sensoring=0.0, ## Randomly censor 0% of measurements
+                     titre_sensoring=0.2, ## Randomly censor 20% of measurements
                      age_min=age_min,age_max=age_max,
                      attack_rates=attack_rates, repeats=repeats,
                      mu_indices = NULL, 
@@ -180,8 +180,8 @@ run_names <- c("obs1","both")
 obs_type_list <- list(1,c(1,2))
 
 ## Fit the model either with just obs_type 1, or both obs types
-#for(run in seq_along(data_type_list)){
-for(run in 2){
+for(run in seq_along(data_type_list)){
+#for(run in 2){
     #browser()
     run_name_use <- paste0(run_name, "_", run_names[run])
     obs_type_use <- obs_type_list[[run]]
@@ -208,13 +208,11 @@ for(run in 2){
                                n_alive=NULL,
                                data_type=data_type_vector
                                )
-    start_inf <- setup_infection_histories_total(titre_dat_use,strain_isolation_times,2,3)
-    tmp <- f(start_tab$values, start_inf)
-    tmp2 <- sum(tmp[[1]])
+    
     ## Time runs and use dopar to run multiple chains in parallel
     t1 <- Sys.time()
     filenames <- paste0(chain_wd_use, "/",run_name_use, "_",1:n_chains)
-    print(paste0("stage 1 ",tmp2))
+    print(paste0("stage 1 "))
     #browser()
     if(rerun){
     res <- foreach(x = filenames, .packages = c('data.table','plyr',"dplyr","tidyverse")) %dopar% {
@@ -222,7 +220,7 @@ for(run in 2){
         index <- 1
         lik <- -Inf
         inf_hist_correct <- 1
-        write.csv(paste0("stage 2 ",tmp),paste0(x, "ddump.txt"),row.names = F)
+        write.csv(paste0("stage 2 ",lik),paste0(x, "ddump.txt"),row.names = F)
         while((!is.finite(lik) || inf_hist_correct > 0) & index < 100){
             
             start_tab <- generate_start_tab(par_tab_use)
@@ -233,14 +231,15 @@ for(run in 2){
             write.csv(c("stage 3b"),paste0(x, "ddump.txt"),row.names = F)
             lik <- sum(y[[1]])
             index <- index + 1
-            
         }
+        
         write.csv(c("stage 4"),paste0(x, "ddump.txt"),row.names = F)
         write.csv(start_tab, paste0(x, "_start_tab.csv"))
         write.csv(start_inf, paste0(x, "_start_inf_hist.csv"))
         write.csv(antigenic_map, paste0(x, "_antigenic_map.csv"))
         write.csv(titre_dat, paste0(x, "_titre_dat.csv"))
         write.csv(c("stage 5"),paste0(x, "ddump.txt"),row.names = F)
+        
         res <- serosolver::run_MCMC(par_tab=start_tab, 
                                     titre_dat=titre_dat_use, 
                                     antigenic_map=antigenic_map_use, 
