@@ -18,12 +18,14 @@ library(viridis)
 library(ggpubr)
 library(tidyverse)
 
-serosolver_wd <- "~/Documents/GitHub/serosolver/"
+serosolver_wd <- "~/GitHub/serosolver/"
 devtools::load_all(serosolver_wd)
 ##library(serosolver) 
 
+packageDescription("serosolver") # check it is the right branch
+
 run_name <- "sim_noro"
-main_wd <- "~/Documents/local_data/norovirus_serosolver/"
+main_wd <- "~/GitHub/serosolver_norovirus_2sera/"
 chain_wd <- paste0(main_wd,"/chains_avidity/",run_name)
 save_wd <- paste0(main_wd,"/figures/chain_plots_avidity/")
 
