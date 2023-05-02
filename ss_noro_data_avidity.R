@@ -17,23 +17,21 @@ library(readr)
 library(viridis)
 library(ggpubr)
 library(tidyverse)
+library(devtools)
 
-# devtools::install_github("seroanalytics/serosolver",ref="multiple_obs_types") # installs the package directly from github
+devtools::install_github("seroanalytics/serosolver",ref="multiple_obs_types",force=T) # installs the package directly from github
 #
+library(serosolver)  # note this must be the specific branch
 
-serosolver_wd <- "~/GitHub/serosolver/" # this is up to date
-devtools::load_all(serosolver_wd) # loads the package
+packageDescription("serosolver") # check it is the right branch
+simulate_data #check this...
 
-#library(serosolver)  # note this must be the specific branch
+rm(list = ls())
 
-#packageVersion("serosolver")
-
-#packageDescription("serosolver") # check it is the right branch
-
-run_name <- "data_noro"
+run_name <- "data_t2b"
 main_wd <- "~/GitHub/serosolver_norovirus_2sera/"
 setwd(main_wd)
-
+#serosolver_wd <- "~/GitHub/serosolver/" # this is up to date
 chain_wd <- paste0(main_wd,"/chains_avidity/",run_name)
 save_wd <- paste0(main_wd,"/figures/chain_plots_avidity/") # where the data are?
 
@@ -42,7 +40,7 @@ if(!dir.exists(chain_wd)) dir.create(chain_wd,recursive = TRUE)
 
 buckets <- 1 ## Ignore
 prior_version <- 2 ## Which prior on the infection histories to use? Prior version 2 is generally preferred
-n_chains <- 3 ## Number of MCMC chains to run
+n_chains <- 5 ## Number of MCMC chains to run
 
 rerun <- TRUE ## Set to FALSE if you just want to load in previously run chains
 
@@ -58,8 +56,8 @@ registerDoParallel(cl)
 
 ## MCMC settings, not super important but can be tweaked
 mcmc_pars <- c("save_block"=100,"thin"=10,"thin_hist"=50,
-               "iterations"=100000,
-               "adaptive_period"=10000,
+               "iterations"=200000,
+               "adaptive_period"=50000,
                "burnin"=0,"switch_sample"=2,"hist_switch_prob"=0.05,
                "year_swap_propn"=0.8,"swap_propn"=0.5,
                "inf_propn"=0.5,"hist_sample_prob"=1,"move_size"=3, "hist_opt"=0,
@@ -97,23 +95,58 @@ age_max <- max(real_data$samples-real_data$DOB)
 sampled_viruses <- c(2002,2006,2009,2012)
 sampling_times <- seq(samp_min, samp_max, by=1)
 
-if(run_name == "data_noro"){
+if(run_name == "data_t1"){
+    # import AC and use function to approximate antigenic_map
+    antigenic_mapB <- read_csv("antigenic_map_noro_inferred_jump.csv")
+    oo <- match(sampled_viruses,antigenic_mapB$inf_times)
+    antigenic_coords <- antigenic_mapB[oo,]
+    names(antigenic_coords) <- c("X","Y","Strain")
+    ggplot(data=antigenic_coords,aes(x=X,y=Y)) + geom_point() +
+        geom_text(data=antigenic_coords,aes(x=X+0.02,y=Y,label=Strain))
+    
+    antigenic_map <- generate_antigenic_map_flexible(antigenic_coords,
+                                                     year_max=2013,year_min=2002,spar = 0.55)
+    paste0("antigenic map setup is ",sum(antigenic_map$inf_times == antigenic_map$inf_times[order(antigenic_map$inf_times)]) == length(antigenic_map$inf_times))
+}
+if(run_name == "data_t2" | run_name == "data_t2b"){
     antigenic_mapB <- read_csv("antigenic_map_noro_inferred_jump.csv")
     oo <- match(sampled_viruses,antigenic_mapB$inf_times)
     antigenic_coords <- antigenic_mapB[oo,]
     names(antigenic_coords) <- c("X","Y","Strain")
     antigenic_map <- as.data.frame(read_csv("antigenic_map_noro_inferred_trueequal.csv"))
+    antigenic_map <- antigenic_map[order(antigenic_map$inf_times),]
+    paste0("antigenic map setup is ",sum(antigenic_map$inf_times == antigenic_map$inf_times[order(antigenic_map$inf_times)]) == length(antigenic_map$inf_times))
 }
+if(run_name == "data_t3" | run_name == "data_t3b"){
+    antigenic_mapB <- read_csv("antigenic_map_noro_kendra.csv")
+    oo <- match(sampled_viruses,antigenic_mapB$inf_times)
+    antigenic_coords <- antigenic_mapB[oo,]
+    names(antigenic_coords) <- c("X","Y","Strain")
+    antigenic_map <- as.data.frame(read_csv("antigenic_map_noro_kendra.csv"))
+    paste0("antigenic map setup is ",sum(antigenic_map$inf_times == antigenic_map$inf_times[order(antigenic_map$inf_times)]) == length(antigenic_map$inf_times))
+}
+if(run_name == "data_t4"){
+    antigenic_mapB <- read_csv("antigenic_map_noro_inferred_jump.csv")
+    oo <- match(sampled_viruses,antigenic_mapB$inf_times)
+    antigenic_coords <- antigenic_mapB[oo,]
+    names(antigenic_coords) <- c("X","Y","Strain")
+    antigenic_map <- as.data.frame(read_csv("antigenic_map_noro_inferred_temporal.csv"))
+}
+
 
 ## Create a fake antigenic map -- can put in what you like here
 #antigenic_coords <- data.frame(Strain=c(2000,2002,2006,2009,2012),X=c(0,0.5,3,3.5,4),Y=c(0,2,1,3,4))
 #antigenic_map <- generate_antigenic_map_flexible(antigenic_coords,
 #                                                 year_max=2013,year_min=2000,spar = 0.001)
 
-ggplot(data=antigenic_map,aes(x=x_coord,y=y_coord)) + geom_line() +
+p1 <- ggplot(data=antigenic_map,aes(x=x_coord,y=y_coord)) + geom_path() +
     geom_text(aes(x=x_coord+0.3,y=y_coord,label=inf_times)) +
     geom_point(data=antigenic_coords,aes(x=X,y=Y),col="blue") +
     geom_text(data=antigenic_coords,aes(x=X+0.4,y=Y,label=Strain),col="blue")
+
+pdf(paste0(save_wd,"/",run_name,"_input_ac.pdf"))
+p1
+dev.off()
 
 strain_isolation_times <- antigenic_map$inf_times
 n_times <- length(strain_isolation_times)
@@ -121,7 +154,7 @@ n_times <- length(strain_isolation_times)
 ## Set up parameter table
 par_tab <- read.csv("par_tab_base_new.csv",stringsAsFactors=FALSE)
 par_tab <- par_tab[par_tab$names != "phi",]
-par_tab[par_tab$names %in% c("alpha","beta"),c("values")] <- c(1/3,1/3) ## Can also try c(1,1), or something informative. Just the parameters of a beta distribution which acts as the prior on the per-time attack rate.
+par_tab[par_tab$names %in% c("alpha","beta"),c("values")] <- c(1,2) ## Can also try c(1,1), or something informative. Just the parameters of a beta distribution which acts as the prior on the per-time attack rate.
 
 ## Just some setup of the parameter table to get parameters vaguely like you showed me
 par_tab$fixed <- 1
@@ -240,8 +273,8 @@ for(run in 2){
     print(paste0("stage ",run_names[run]," starting"))
     #browser()
     if(rerun){
-    res <- foreach(x = filenames, .packages = c('data.table','plyr',"dplyr","tidyverse")) %dopar% {
-        devtools::load_all(serosolver_wd)
+    res <- foreach(x = filenames, .packages = c('serosolver','data.table','plyr',"dplyr","tidyverse")) %dopar% {
+        devtools::load_all(save_wd)
         index <- 1
         lik <- -Inf
         inf_hist_correct <- 1
@@ -332,6 +365,18 @@ for(run in 2){
     chains <- load_mcmc_chains(chain_wd_use,convert_mcmc=FALSE,burnin = mcmc_pars["adaptive_period"],unfixed = FALSE)
     chain <- as.data.frame(chains$theta_chain)
     inf_chain <- chains$inf_chain 
+    vals <- c("mu","mu_short",
+              "tau","sigma1",
+              "sigma2",
+              "wane",
+              "mu.1","mu_short.1",
+              "tau.1","sigma1.1",
+              "sigma2.1",
+              "wane.1",
+              "obs_sd",
+              "lnlike","prior_prob")
+    t1 <- round(sapply(chain[vals],quantile,probs=c(0.5,0.025,0.975)),digits = 3)
+    write.csv(t(t1),file=paste0(save_wd_use,"/",run_name_use,"_summary.csv"),row.names = T)
     
     ## Plot kinetics parameter estimates and number of infections
     p1 <- plot_posteriors_theta(chain, par_tab, burnin=0,samples=50,TRUE,FALSE,FALSE, TRUE,"")
@@ -351,7 +396,7 @@ for(run in 2){
     p_ar <- plot_attack_rates(inf_chain, titre_dat_use, 2000:2013,
                               pad_chain=FALSE,plot_den=TRUE,n_alive = n_alive,
                               #true_ar=true_ar,
-                              prior_pars = c("prior_version"=2,"alpha"=1/3,"beta"=1/3),
+                              prior_pars = c("prior_version"=2,"alpha"=1,"beta"=2),
                               by_val=1)
     p_ar
     ggsave(paste0(save_wd_use,"/",run_name_use,"_ar.pdf"),p_ar,height=7,width=8,units="in",dpi=300)
