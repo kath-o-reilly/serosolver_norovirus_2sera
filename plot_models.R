@@ -14,7 +14,7 @@ library(viridis)
 library(ggpubr)
 library(tidyverse)
 
-run_name <- "data_noro"
+run_name <- "data_t2"
 main_wd <- "~/GitHub/serosolver_norovirus_2sera/"
 setwd(main_wd)
 
@@ -25,12 +25,67 @@ save_wd <- paste0(main_wd,"/figures/chain_plots_avidity/") # where the data are?
 
 titre_dat <- read_csv(file=paste0(save_wd,"/",run_name,"_titre_data.csv"))
 
-# plots
+# MCMC settings, not super important but can be tweaked
+mcmc_pars <- c("save_block"=100,"thin"=10,"thin_hist"=50,
+               "iterations"=200000,
+               "adaptive_period"=50000,
+               "burnin"=0,"switch_sample"=2,"hist_switch_prob"=0.05,
+               "year_swap_propn"=0.8,"swap_propn"=0.5,
+               "inf_propn"=0.5,"hist_sample_prob"=1,"move_size"=3, "hist_opt"=0,
+               "popt"=0.44,"popt_hist"=0.44,"opt_freq"=2000,propose_from_prior=TRUE)
+sampled_viruses <- c(2002,2006,2009,2012)
+n_obs_types <- 2
+## Set up parameter table
+par_tab <- read.csv("par_tab_base_new.csv",stringsAsFactors=FALSE)
+par_tab <- par_tab[par_tab$names != "phi",]
+par_tab[par_tab$names %in% c("alpha","beta"),c("values")] <- c(1,2) ## Can also try c(1,1), or something informative. Just the parameters of a beta distribution which acts as the prior on the per-time attack rate.
 
+## Just some setup of the parameter table to get parameters vaguely like you showed me
+par_tab$fixed <- 1
+par_tab[par_tab$names %in% c("mu","tau","sigma1","obs_sd","mu_short","wane","sigma2"),"fixed"] <- 0
+
+## Create some random measurement offsets -- these add a systematic shift to each observed variant. Only those sampled variant years have offsets, the rest are 0
+## These are unknown parameters to be estimated, assuming the offsets are drawn from ~ norm(0, 1)
+par_tab_rhos <- data.frame(names="rho",values=rep(0,length(sampled_viruses)),fixed=0,steps=0.1,
+                           lower_bound=-3,upper_bound=3,lower_start=-1,
+                           upper_start=1,type=3)
+
+par_tab_rhos$values <- rnorm(length(sampled_viruses), 1)
+measurement_indices <- seq_along(sampled_viruses)
+
+measurement_indices <- data.frame(virus = sampled_viruses, 
+                                  obs_type = rep(1:n_obs_types, each=length(sampled_viruses)),
+                                  rho_index=1:(length(sampled_viruses)*n_obs_types))
+
+par_tab <- bind_rows(par_tab, par_tab_rhos)
+
+## Extend parameter table for each aditional observation type
+par_tab$obs_type <- 1
+antigenic_map_tmp <- antigenic_map
+antigenic_map$obs_type <- 1
+par_tab_tmp <- par_tab
+if(n_obs_types > 1){
+  for(i in 2:n_obs_types){
+    par_tab_tmp2 <- par_tab_tmp
+    antigenic_map_tmp2 <- antigenic_map_tmp
+    antigenic_map_tmp2$obs_type <- i 
+    par_tab_tmp2$obs_type <- i
+    par_tab <- bind_rows(par_tab, par_tab_tmp2 %>% filter(!(names %in% c("alpha","beta"))))
+    antigenic_map <- bind_rows(antigenic_map, antigenic_map_tmp2)
+  }
+}
+
+## Randomize model parameters
+par_tab <- generate_start_tab(par_tab)
+
+# plots
+run_names <- c("obs1","both")
 run <- 2
+run_name_use <- paste0(run_name, "_", run_names[run])
+par_tab_use <- par_tab[par_tab$obs_type %in% obs_type_use,]
 
 chain_wd_use <- paste0(chain_wd, "_",run_names[run])
-save_wd_use <- paste0(save_wd, "_",run_names[run])
+save_wd_use <- paste0(save_wd, "_",run_name[run])
 
 ## Read in chains for trace plot
 chains <- load_mcmc_chains(chain_wd_use,convert_mcmc=TRUE,burnin = mcmc_pars["adaptive_period"],unfixed = TRUE)
@@ -41,6 +96,41 @@ dev.off()
 ## Plot posterior densities and compare to ground truth parameters
 theta_chain <- chains$theta_chain
 theta_chain_melted <- reshape2::melt(as.data.frame(theta_chain),id.vars=c("sampno","chain_no")) %>% as_tibble()
+
+head(theta_chain_melted)
+head(theta_chain)
+
+# can I plot correlation here?
+library(cowplot)
+tmp <- as.data.frame(theta_chain) %>% filter(chain_no == 1)
+
+# mega correlation estimates
+vals <- names(tmp)
+vals_use <- vals[c(c(5:10),c(21:26))]
+ss <- sample(dim(tmp)[1],1000,replace = FALSE)
+cor_dat <- tmp[ss,vals_use]
+
+p1 <- ggplot(cor_dat,aes(x=mu_short,y=mu_short.1)) + geom_point()
+p2 <- ggplot(cor_dat,aes(x=mu_short,y=tau.1)) + geom_point()
+p3 <- ggplot(cor_dat,aes(x=mu_short,y=tau.1)) + geom_point()
+p4 <- ggplot(cor_dat,aes(x=sigma1,y=sigma2)) + geom_point()
+
+pdf(paste0(run_name_use,"_correlation_4_plot.pdf"),height=3,width=9)
+plot_grid(p1,p2,p3,p4,ncol=4)
+dev.off()
+
+library(Hmisc)
+res <- rcorr(as.matrix(cor_dat))
+round(res$r, 2)
+round(res$P, 5)
+library("PerformanceAnalytics")
+chart.Correlation(cor_dat, histogram=TRUE, pch=20)
+
+pdf(paste0(run_name_use,"_correlation_plot.pdf"),height=8,width=9)
+chart.Correlation(cor_dat, histogram=TRUE, pch=20)
+dev.off()
+
+#
 
 par_tab_tmp <-  par_tab_use %>% group_by(names) %>% mutate(n=1:n()) %>% mutate(variable = ifelse(n > 1, paste0(names,".",n-1), names)) %>%
   select(-n) %>% mutate(obs_type_p = paste0("Obs type: ", obs_type))
